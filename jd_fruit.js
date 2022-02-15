@@ -40,6 +40,12 @@ const urlSchema = `openjd://virtual?params=%7B%20%22category%22:%20%22jump%22,%2
     $.msg($.name, '【提示】请先获取京东账号一cookie\n直接使用NobyDa的京东签到获取', 'https://bean.m.jd.com/bean/signIndex.action', {"open-url": "https://bean.m.jd.com/bean/signIndex.action"});
     return;
   }
+  if ($.isNode()) {
+    if (process.argv[2]) {
+      cookiesArr = [decodeURIComponent(process.argv[2])];
+      console.log(`收到Cookie：${decodeURIComponent(cookiesArr[0])}`)
+    }
+  }
   for (let i = 0; i < cookiesArr.length; i++) {
     if (cookiesArr[i]) {
       cookie = cookiesArr[i];
@@ -80,7 +86,7 @@ async function jdFruit() {
         }
         await $.wait(Math.floor(Math.random() * 10 + 3) * 1000)
       }
-
+      console.log('当前种植', $.farmInfo.farmUserPro.name)
       console.log(`\n【已成功兑换水果】${$.farmInfo.farmUserPro.winTimes}次\n`);
       message += `【已兑换水果】${$.farmInfo.farmUserPro.winTimes}次\n`;
       await masterHelpShare();//助力好友

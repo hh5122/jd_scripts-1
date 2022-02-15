@@ -2,7 +2,7 @@ import axios from "axios"
 import {Md5} from "ts-md5"
 import {format} from 'date-fns'
 import * as dotenv from "dotenv"
-import {accessSync, readFileSync, writeFileSync} from "fs"
+import {existsSync, readFileSync, writeFileSync} from "fs"
 
 const CryptoJS = require('crypto-js')
 dotenv.config()
@@ -98,19 +98,20 @@ async function getFarmShareCode(cookie: string) {
     return ''
 }
 
-function requireConfig() {
+async function requireConfig(index: number = -1) {
   let cookiesArr: string[] = []
-  return new Promise(resolve => {
-    console.log('开始获取配置文件\n')
-    const jdCookieNode = require('./jdCookie.js')
-    Object.keys(jdCookieNode).forEach((item) => {
-      if (jdCookieNode[item]) {
-        cookiesArr.push(jdCookieNode[item])
-      }
-    })
-    console.log(`共${cookiesArr.length}个京东账号\n`)
-    resolve(cookiesArr)
+  const jdCookieNode = require('./jdCookie.js')
+  Object.keys(jdCookieNode).forEach((item) => {
+    if (jdCookieNode[item]) {
+      cookiesArr.push(jdCookieNode[item])
+    }
   })
+  console.log(`共${cookiesArr.length}个京东账号\n`)
+  if (index != -1) {
+    return [cookiesArr[index]]
+  } else {
+    return cookiesArr
+  }
 }
 
 function wait(timeout: number) {
@@ -119,7 +120,7 @@ function wait(timeout: number) {
   })
 }
 
-async function requestAlgo(appId: number | string = 10032) {
+async function requestAlgo(appId: number = 10032) {
   fingerprint = generateFp()
   return new Promise<void>(async resolve => {
     let {data}: any = await axios.post('https://cactus.jd.com/request_algo?g_ty=ajax', {
@@ -224,14 +225,14 @@ function getJxToken(cookie: string) {
 }
 
 function exceptCookie(filename: string = 'x.ts') {
-  let except: string[]
-  try {
-    accessSync('./utils/exceptCookie.json')
-    except = JSON.parse(readFileSync('./utils/exceptCookie.json').toString() || '{}')[filename] || []
-  } catch (e: any) {
-    except = []
+  let except: any = []
+  if (existsSync('./utils/exceptCookie.json')) {
+    try {
+      except = JSON.parse(readFileSync('./utils/exceptCookie.json').toString() || '{}')[filename] || []
+    } catch (e) {
+      console.log('./utils/exceptCookie.json JSON格式错误')
+    }
   }
-  console.log('except:', except)
   return except
 }
 
@@ -262,13 +263,44 @@ function randomNumString(e: number) {
   return n
 }
 
+function randomWord() {
+  let t = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', a = t.length, n = ""
+  return t.charAt(Math.floor(Math.random() * a))
+}
+
 async function getshareCodeHW(key: string) {
-  try {
-    let {data}: any = await axios.get('https://api.jdsharecode.xyz/api/HW_CODES')
-    return data[key] || []
-  } catch (e) {
-    return []
+  let shareCodeHW: string[] = []
+  for (let i = 0; i < 5; i++) {
+    try {
+      let {data}: any = await axios.get('https://api.jdsharecode.xyz/api/HW_CODES')
+      shareCodeHW = data[key] || []
+      if (shareCodeHW.length !== 0) {
+        break
+      }
+    } catch (e) {
+      console.log("getshareCodeHW Error, Retry...")
+      await wait(getRandomNumberByRange(2000, 6000))
+    }
   }
+  return shareCodeHW
+}
+
+async function getShareCodePool(key: string, num: number) {
+  let shareCode: string[] = []
+  for (let i = 0; i < 2; i++) {
+    try {
+      let {data}: any = await axios.get(`https://api.jdsharecode.xyz/api/${key}/${num}`)
+      shareCode = data.data || []
+      console.log(`随机获取${num}个${key}成功：${JSON.stringify(shareCode)}`)
+      if (shareCode.length !== 0) {
+        break
+      }
+    } catch (e) {
+      console.log("getShareCodePool Error, Retry...")
+      await wait(getRandomNumberByRange(2000, 6000))
+    }
+  }
+  return shareCode
 }
 
 export default USER_AGENT
@@ -288,5 +320,7 @@ export {
   resetHosts,
   o2s,
   randomNumString,
-  getshareCodeHW
+  getshareCodeHW,
+  getShareCodePool,
+  randomWord
 }

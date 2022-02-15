@@ -10,12 +10,11 @@
 import axios from 'axios'
 import {Md5} from 'ts-md5'
 import {getDate} from 'date-fns'
-import {requireConfig, wait, requestAlgo, h5st, getJxToken, getBeanShareCode, getFarmShareCode, getRandomNumberByRange, randomString} from './TS_USER_AGENTS'
+import {requireConfig, wait, requestAlgo, h5st, getJxToken, getBeanShareCode, getFarmShareCode, randomString, randomWord, getRandomNumberByRange, o2s, getshareCodeHW, getShareCodePool} from './TS_USER_AGENTS'
 
-const axi = axios.create({timeout: 10000})
 
 let cookie: string = '', res: any = '', UserName: string, index: number
-let shareCodes: string[] = [], shareCodesSelf: string[] = [], shareCodesHW: string[] = [], isCollector: Boolean = false, token: any = {}
+let shareCode: string[] = [], shareCodeSelf: string[] = [], shareCodeHW: string[] = [], isCollector: Boolean = false, token: any = {}
 
 interface Params {
   strBuildIndex?: string,
@@ -82,7 +81,7 @@ interface Params {
 
     token = getJxToken(cookie)
     try {
-      await makeShareCodes()
+      await makeshareCode()
     } catch (e) {
       console.log(e)
     }
@@ -146,7 +145,7 @@ interface Params {
           break
         }
       }
-      if (t.dwCompleteNum < t.dwTargetNum && t.strTaskName !== '去接待NPC') {
+      if (t.dwCompleteNum < t.dwTargetNum && t.strTaskName !== '去接待NPC' && t.strTaskName.indexOf('累计邀请') === -1) {
         console.log(t.strTaskName)
         res = await api('DoTask', '_cfd_t,bizCode,configExtra,dwEnv,ptag,source,strZone,taskId', {bizCode: tasks.Data.strZone, taskId: t.ddwTaskId})
         await wait(t.dwLookTime * 1000 ?? 2000)
@@ -161,35 +160,28 @@ interface Params {
 
     // 加速卡
     res = await api('user/GetPropCardCenterInfo', '_cfd_t,bizCode,dwEnv,ptag,source,strZone')
-    let richcard: any = res.cardInfo.richcard, coincard: any = res.cardInfo.coincard, isUsing: boolean = res.cardInfo.dwWorkingType !== 0
+    console.log('加速卡：')
+    o2s(res)
+    let richcard: any = res.cardInfo.richcard, coincard: any = res.cardInfo.coincard
     for (let card of coincard) {
-      if (!isUsing && card.dwCardNums !== 0) {
+      if (card.dwCardNums !== 0) {
         res = await api('user/UsePropCard', '_cfd_t,bizCode,dwCardType,dwEnv,ptag,source,strCardTypeIndex,strZone', {dwCardType: 1, strCardTypeIndex: encodeURIComponent(card.strCardTypeIndex)})
         if (res.iRet === 0) {
           console.log('金币加速卡使用成功')
-          isUsing = true
         } else {
           console.log('金币加速卡使用失败', res)
-          break
         }
-      } else {
         break
       }
     }
     for (let card of richcard) {
-      if (!isUsing && card.dwCardNums !== 0) {
-        for (let j = 0; j < card.dwCardNums; j++) {
-          res = await api('user/UsePropCard', '_cfd_t,bizCode,dwCardType,dwEnv,ptag,source,strCardTypeIndex,strZone', {dwCardType: 2, strCardTypeIndex: encodeURIComponent(card.strCardTypeIndex)})
-          if (res.iRet === 0) {
-            console.log('点券加速卡使用成功')
-            isUsing = true
-          } else {
-            console.log('点券加速卡使用失败', res)
-            break
-          }
-          await wait(2000)
+      if (card.dwCardNums !== 0) {
+        res = await api('user/UsePropCard', '_cfd_t,bizCode,dwCardType,dwEnv,ptag,source,strCardTypeIndex,strZone', {dwCardType: 2, strCardTypeIndex: encodeURIComponent(card.strCardTypeIndex)})
+        if (res.iRet === 0) {
+          console.log('点券加速卡使用成功')
+        } else {
+          console.log('点券加速卡使用失败', res)
         }
-      } else {
         break
       }
     }
@@ -205,17 +197,8 @@ interface Params {
     console.log('底部任务列表结束')
 
     // 升级建筑
-    while (1) {
-      res = await api('user/QueryUserInfo',
-        '_cfd_t,bizCode,ddwTaskId,dwEnv,ptag,source,strMarkList,strPgUUNum,strPgtimestamp,strPhoneID,strShareId,strZone',
-        {
-          ddwTaskId: '',
-          strShareId: '',
-          strMarkList: 'guider_step,collect_coin_auth,guider_medal,guider_over_flag,build_food_full,build_sea_full,build_shop_full,build_fun_full,medal_guider_show,guide_guider_show,guide_receive_vistor,daily_task,guider_daily_task',
-          strPgtimestamp: token.strPgtimestamp,
-          strPhoneID: token.strPhoneID,
-          strPgUUNum: token.strPgUUNum
-        })
+    for (let j = 0; j < 5; j++) {
+      res = await api('user/QueryUserInfo', '_cfd_t,bizCode,ddwTaskId,dwEnv,ptag,source,strMarkList,strPgUUNum,strPgtimestamp,strPhoneID,strShareId,strZone', {ddwTaskId: '', strShareId: '', strMarkList: 'guider_step,collect_coin_auth,guider_medal,guider_over_flag,build_food_full,build_sea_full,build_shop_full,build_fun_full,medal_guider_show,guide_guider_show,guide_receive_vistor,daily_task,guider_daily_task', strPgtimestamp: token.strPgtimestamp, strPhoneID: token.strPhoneID, strPgUUNum: token.strPgUUNum})
       let wallet: number = res.ddwCoinBalance
       console.log('金币余额:', wallet)
       let build: string = '', minLV: number = 99999
@@ -232,64 +215,19 @@ interface Params {
       res = await api('user/GetBuildInfo', '_cfd_t,bizCode,dwEnv,dwType,ptag,source,strBuildIndex,strZone', {strBuildIndex: build})
       console.log(`${build}升级需要:`, res.ddwNextLvlCostCoin)
       await wait(2000)
-      if (res.dwCanLvlUp === 1 && res.ddwNextLvlCostCoin * 2 <= wallet) {
+      if (res.dwCanLvlUp === 1 && res.ddwNextLvlCostCoin <= wallet) {
         res = await api('user/BuildLvlUp', '_cfd_t,bizCode,ddwCostCoin,dwEnv,ptag,source,strBuildIndex,strZone', {ddwCostCoin: res.ddwNextLvlCostCoin, strBuildIndex: build})
         await wait(2000)
         if (res.iRet === 0) {
           console.log(`升级成功`)
           await wait(2000)
+        } else {
+          console.log('升级失败', res)
         }
       } else {
         break
       }
       await wait(3000)
-    }
-
-    // 珍珠
-    res = await api('user/ComposePearlState', '', {__t: Date.now(), dwGetType: 0})
-    let dwCurProgress: number = res.dwCurProgress, strDT: string = res.strDT, strMyShareId: string = res.strMyShareId, ddwSeasonStartTm: number = res.ddwSeasonStartTm
-    let strLT: string = res.oPT[res.ddwCurTime % (res.oPT.length)]
-    console.log(`已合成${dwCurProgress}个珍珠，${res.ddwVirHb / 100}元红包`)
-
-    if (res.dayDrawInfo.dwIsDraw === 0) {
-      res = await api("user/GetPearlDailyReward", "__t,strZone", {__t: Date.now()})
-      if (res.iRet === 0) {
-        res = await api("user/PearlDailyDraw", "__t,ddwSeaonStart,strToken,strZone", {__t: Date.now(), ddwSeaonStart: ddwSeasonStartTm, strToken: res.strToken})
-        if (res.strPrizeName) {
-          console.log('抽奖获得:', res.strPrizeName)
-        } else {
-          console.log('抽奖失败？', res)
-        }
-      }
-    }
-
-    // 模拟合成
-    if (strDT) {
-      console.log('继续合成')
-      let RealTmReport: number = getRandomNumberByRange(10, 20)
-      console.log('本次合成需要上报:', RealTmReport)
-      for (let j = 0; j < RealTmReport; j++) {
-        res = await api('user/RealTmReport', '', {__t: Date.now(), dwIdentityType: 0, strBussKey: 'composegame', strMyShareId: strMyShareId, ddwCount: 10})
-        if (res.iRet === 0)
-          console.log(`游戏中途上报${j + 1}:OK`)
-        await wait(2000)
-        if (getRandomNumberByRange(1, 6) === 2) {
-          res = await api('user/ComposePearlAward', '__t,size,strBT,strZone,type', {__t: Date.now(), size: 1, strBT: strDT, type: 4})
-          if (res.iRet === 0) {
-            console.log(`上报得红包:${res.ddwAwardHb / 100}红包，当前有${res.ddwVirHb / 100}`)
-          } else {
-            console.log('上报得红包失败:', res)
-          }
-          await wait(1000)
-        }
-      }
-      // 珍珠奖励
-      res = await api(`user/ComposePearlAddProcess`, '__t,strBT,strLT,strZone', {__t: Date.now(), strBT: strDT, strLT: strLT})
-      if (res.iRet === 0) {
-        console.log(`合成成功:获得${res.ddwAwardHb / 100}红包，当前有${res.dwCurProgress}珍珠，${res.ddwVirHb / 100}红包`)
-      } else {
-        console.log('合成失败:', res)
-      }
     }
 
     // 签到 助力奖励
@@ -399,7 +337,6 @@ interface Params {
         console.log('收藏家出现')
         // TODO 背包满了再卖给收破烂的
         res = await api('story/CollectorOper', '_cfd_t,bizCode,dwEnv,ptag,source,strZone,strStoryId,dwType,ddwTriggerDay', {strStoryId: res.StoryInfo.StoryList[0].strStoryId, dwType: '2', ddwTriggerDay: res.StoryInfo.StoryList[0].ddwTriggerDay})
-        console.log(res)
         await wait(1000)
         isCollector = true
         // 清空背包
@@ -471,7 +408,7 @@ interface Params {
     tasks = await api('story/GetActTask', '_cfd_t,bizCode,dwEnv,ptag,source,strZone')
     await wait(2000)
     for (let t of tasks.Data.TaskList) {
-      if ([1, 2].indexOf(t.dwOrderId) > -1 && t.dwCompleteNum < t.dwTargetNum && t.strTaskName != '热气球接待20位游客') {
+      if ([1, 2].indexOf(t.dwOrderId) > -1 && t.dwCompleteNum < t.dwTargetNum && t.strTaskName !== '升级1个建筑') {
         console.log('开始任务➡️:', t.strTaskName)
         res = await api('DoTask', '_cfd_t,bizCode,configExtra,dwEnv,ptag,source,strZone,taskId', {taskId: t.ddwTaskId, configExtra: ''}, 'right')
         await wait(t.dwLookTime * 1000)
@@ -490,7 +427,7 @@ interface Params {
         res = await api('Award', '_cfd_t,bizCode,configExtra,dwEnv,ptag,source,strZone,taskId', {taskId: t.ddwTaskId}, 'right')
         await wait(1000)
         if (res.ret === 0) {
-          console.log(`领奖成功:`, res)
+          console.log('领奖成功：', res)
         } else {
           console.log('领奖失败', res)
         }
@@ -533,24 +470,22 @@ interface Params {
     }
   }
 
-  for (let i = 0; i < cookiesArr.length; i++) {
-    await getCodesHW()
-    // 获取随机助力码
-    try {
-      let {data}: any = await axi.get(`https://api.jdsharecode.xyz/api/jxcfd/30`, {timeout: 10000})
-      shareCodes = [...shareCodesSelf, ...shareCodesHW, ...data.data]
-    } catch (e) {
-      console.log('获取助力池失败')
-      shareCodes = [...shareCodesSelf, ...shareCodesHW]
+  for (let [value, index] of cookiesArr.entries()) {
+    if (shareCodeHW.length === 0) {
+      shareCodeHW = await getshareCodeHW('jxcfd')
     }
+    // 获取随机助力码
+    let pool: string[] = await getShareCodePool('jxcfd', 30)
+    shareCode = Array.from(new Set([...shareCodeSelf, ...shareCodeHW, ...pool]))
 
-    for (let j = 0; j < shareCodes.length; j++) {
-      cookie = cookiesArr[i]
-      console.log(`账号${i + 1}去助力:`, shareCodes[j])
-      res = await api('story/helpbystage', '_cfd_t,bizCode,dwEnv,ptag,source,strShareId,strZone', {strShareId: shareCodes[j]})
+    for (let code of shareCode) {
+      cookie = value
+      UserName = decodeURIComponent(cookie.match(/pt_pin=([^;]*)/)![1])
+      console.log(`【账号${index + 1}】 ${UserName} 去助力 ${code}`)
+      res = await api('story/helpbystage', '_cfd_t,bizCode,dwEnv,ptag,source,strShareId,strZone', {strShareId: code})
       if (res.iRet === 0) {
         console.log('助力成功:', res.Data.GuestPrizeInfo.strPrizeName)
-      } else if (res.iRet === 2235) {
+      } else if (res.iRet === 2190 || res.sErrMsg === '达到助力上限') {
         console.log('上限')
         break
       } else if (res.iRet === 1023) {
@@ -567,7 +502,7 @@ interface Params {
 })()
 
 async function api(fn: string, stk: string, params: Params = {}, taskPosition = '') {
-  let url: string
+  let url: string, t: number = Date.now()
   if (['GetUserTaskStatusList', 'Award', 'DoTask'].includes(fn)) {
     let bizCode: string
     if (!params.bizCode) {
@@ -575,9 +510,9 @@ async function api(fn: string, stk: string, params: Params = {}, taskPosition = 
     } else {
       bizCode = params.bizCode
     }
-    url = `https://m.jingxi.com/newtasksys/newtasksys_front/${fn}?strZone=jxbfd&bizCode=${bizCode}&source=jxbfd&dwEnv=7&_cfd_t=${Date.now()}&ptag=&_stk=${encodeURIComponent(stk)}&_ste=1&_=${Date.now()}&sceneval=2&g_login_type=1&callback=jsonpCBK${String.fromCharCode(Math.floor(Math.random() * 26) + "A".charCodeAt(0))}&g_ty=ls`
+    url = `https://m.jingxi.com/newtasksys/newtasksys_front/${fn}?strZone=jxbfd&bizCode=${bizCode}&source=jxbfd&dwEnv=7&_cfd_t=${t}&ptag=&_stk=${encodeURIComponent(stk)}&_ste=1&_=${t + 2}&sceneval=2&g_login_type=1&callback=jsonpCBK${randomWord()}&g_ty=ls`
   } else {
-    url = `https://m.jingxi.com/jxbfd/${fn}?strZone=jxbfd&bizCode=jxbfd&source=jxbfd&dwEnv=7&_cfd_t=${Date.now()}&ptag=&_stk=${encodeURIComponent(stk)}&_ste=1&_=${Date.now()}&sceneval=2&g_login_type=1&callback=jsonpCBK${String.fromCharCode(Math.floor(Math.random() * 26) + "A".charCodeAt(0))}&g_ty=ls`
+    url = `https://m.jingxi.com/jxbfd/${fn}?strZone=jxbfd&bizCode=jxbfd&source=jxbfd&dwEnv=7&_cfd_t=${t}&ptag=&_stk=${encodeURIComponent(stk)}&_ste=1&_=${t + 2}&sceneval=2&g_login_type=1&callback=jsonpCBK${randomWord()}&g_ty=ls`
   }
   url = h5st(url, stk, params, 10032)
   let {data} = await axios.get(url, {
@@ -586,20 +521,16 @@ async function api(fn: string, stk: string, params: Params = {}, taskPosition = 
       'Accept': '*/*',
       'Connection': 'keep-alive',
       'Accept-Language': 'zh-CN,zh-Hans;q=0.9',
-      'User-Agent': `jdpingou;iPhone;4.13.0;14.4.2;${randomString(40)};network/wifi;model/iPhone10,2;appBuild/100609;supportApplePay/1;hasUPPay/0;pushNoticeIsOpen/1;hasOCPay/0;supportBestPay/0;session/${Math.random() * 98 + 1};pap/JA2019_3111789;brand/apple;supportJDSHWK/1;Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148`,
+      'User-Agent': `jdpingou;iPhone;5.14.2;${getRandomNumberByRange(12, 16)}.${getRandomNumberByRange(0, 3)};${randomString(40)};`,
       'Referer': 'https://st.jingxi.com/',
       'Cookie': cookie
     }
   })
-  if (typeof data === 'string') {
-    try {
-      return JSON.parse(data.replace(/\n/g, '').match(/jsonpCBK.?\(([^)]*)/)![1])
-    } catch (e) {
-      console.log(data)
-      return ''
-    }
-  } else {
-    return data
+  try {
+    return JSON.parse(data.match(/jsonpCBK.?\(([^)]*)/)![1])
+  } catch (e) {
+    console.log(data)
+    return ''
   }
 }
 
@@ -617,7 +548,7 @@ async function task() {
           res = JSON.parse(res.data.prizeInfo)
           console.log(`领奖成功:`, res.ddwCoin, res.ddwMoney)
         } catch (e) {
-          console.log('领奖成功:', res.data)
+          console.log('领奖失败:', res.data)
         }
         await wait(1000)
         return 1
@@ -642,7 +573,7 @@ async function task() {
   return 0
 }
 
-async function makeShareCodes() {
+async function makeshareCode() {
   try {
     res = await api('user/QueryUserInfo', '_cfd_t,bizCode,ddwTaskId,dwEnv,ptag,source,strPgUUNum,strPgtimestamp,strPhoneID,strShareId,strVersion,strZone', {
       ddwTaskId: '',
@@ -654,7 +585,7 @@ async function makeShareCodes() {
       strVersion: '1.0.1'
     })
     console.log('助力码:', res.strMyShareId)
-    shareCodesSelf.push(res.strMyShareId)
+    shareCodeSelf.push(res.strMyShareId)
     let bean: string = await getBeanShareCode(cookie)
     let farm: string = await getFarmShareCode(cookie)
     let pin: string = Md5.hashStr(cookie.match(/pt_pin=([^;]*)/)![1])
@@ -663,13 +594,5 @@ async function makeShareCodes() {
   } catch (e) {
     console.log('自动提交失败')
     console.log(e)
-  }
-}
-
-async function getCodesHW() {
-  try {
-    let {data}: any = await axi.get(`https://api.jdsharecode.xyz/api/HW_CODES`, {timeout: 10000})
-    shareCodesHW = data['jxcfd'] || []
-  } catch (e) {
   }
 }
